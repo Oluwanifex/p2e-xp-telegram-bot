@@ -42,7 +42,7 @@ While `/run` is active, the bot sends a Telegram report at the configured interv
 | `/stop` | Pause the loop. |
 | `/logout` | Close the participant's local browser session. |
 
-The loop claims ready timers, starts eligible production, refills energy with available food, advances the active quest, and submits completed quests through the game's server-validated function. It is intentionally conservative: it does not submit requests faster than the game's own controls and does not attempt to defeat cooldowns.
+The loop claims ready timers, claims the daily reward when available, performs at most one official quest action per cycle, refills energy with available food, advances the active quest, and submits completed quests through the game's server-validated function. It is intentionally conservative: it does not start every production timer at once, does not submit requests faster than the game's own controls, and does not attempt to defeat cooldowns.
 
 ## Important rules
 

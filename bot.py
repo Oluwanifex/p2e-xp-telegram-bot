@@ -118,7 +118,9 @@ class GameBot:
                 await session.page.locator("#login-form").locator("button[type=submit]").click()
 
                 # The reference auth script redirects to p2e/home.html after Firebase sign-in.
-                await session.page.wait_for_url("**/p2e/home.html", timeout=ACTION_TIMEOUT_MS)
+                await session.page.wait_for_url(
+                    "**/p2e/home.html", wait_until="domcontentloaded", timeout=ACTION_TIMEOUT_MS
+                )
                 await session.page.wait_for_function(
                     "Boolean(firebase && firebase.auth && firebase.auth().currentUser)",
                     timeout=ACTION_TIMEOUT_MS,
@@ -129,7 +131,9 @@ class GameBot:
                 if await game_link.count() == 0:
                     raise RuntimeError("authenticated home page has no game link")
                 await game_link.click()
-                await session.page.wait_for_url("**/p2e/game.html**", timeout=ACTION_TIMEOUT_MS)
+                await session.page.wait_for_url(
+                    "**/p2e/game.html**", wait_until="domcontentloaded", timeout=ACTION_TIMEOUT_MS
+                )
                 # UID is set by onAuthStateChanged before the asynchronous Firestore load.
                 await session.page.wait_for_function(
                     "Boolean(window.CURRENT_USER_UID)", timeout=max(ACTION_TIMEOUT_MS, 60000)
@@ -198,46 +202,24 @@ class GameBot:
         before = await self.state(session)
 
         # Claim daily reward whenever the official button is active.
-        await self.click(session, "#daily-reward-btn")
+        daily = session.page.locator("#daily-reward-btn")
+        if await daily.count() and await daily.is_enabled():
+            await self.click(session, "#daily-reward-btn")
+            await session.page.wait_for_timeout(1200)
 
-        # Complete any ready timers before starting new work.
-        timers = before.get("timers", {})
-        timer_selectors = {
-            "woodCutStart": "#collect-wood-btn", "coalMineStart": "#collect-coal-btn",
-            "sandMineStart": "#collect-sand-btn", "stoneMineStart": "#mine-stone-btn",
-            "plankStart": "#craft-plank-btn", "glassCraftStart": "#craft-glass-btn",
-            "fishingStart": "#start-fishing-btn", "digStart": "#dig-earth-btn",
-        }
-        for timer_name, selector in timer_selectors.items():
-            value = timers.get(timer_name, 0)
-            if isinstance(value, (int, float)) and value > 0:
-                # The site itself rejects early claims; clicking is safe and server validated.
-                await self.click(session, selector)
-
-        current = await self.state(session)
-        energy = current["energy"]
-        if energy < 5 and current["food"] > 0:
-            await self.click(session, "#fill-energy-btn")
-            await session.page.wait_for_timeout(150)
-            await self.click(session, "#energyModal .food-btn")
-
-        # Keep all independent 60–120 second production timers occupied.
-        current = await self.state(session)
-        timer_starts = current["timers"]
-        for timer_name, selector in timer_selectors.items():
-            value = timer_starts.get(timer_name, 0)
-            if not value or value == -1:
-                await self.click(session, selector)
-
-        # Progress the current quest using its official action. This improves XP and level-gated access.
+        # Use exactly one official action per cycle. Production actions consume energy
+        # when started and award XP only after collection; starting every action at once
+        # wastes energy and makes no progress toward the active quest.
         quest_actions = {
             "q1_stone": "#mine-stone-btn", "q2_wood": "#collect-wood-btn", "q3_coal": "#collect-coal-btn",
             "q4_sand": "#collect-sand-btn", "q5_plank": "#craft-plank-btn", "q6_glass": "#craft-glass-btn",
             "q7_fish": "#start-fishing-btn",
         }
+        current = await self.state(session)
         quest_id = current.get("currentQuestId")
         if quest_id in quest_actions:
-            await self.click(session, quest_actions[quest_id])
+            if current["energy"] >= 1:
+                await self.click(session, quest_actions[quest_id])
         elif quest_id == "q8_house":
             # Build only when the normal UI reports a valid affordable building.
             await session.page.evaluate("""() => {
@@ -258,7 +240,7 @@ class GameBot:
             }
         }""")
 
-        await session.page.wait_for_timeout(250)
+        await session.page.wait_for_timeout(1200)
         return await self.state(session)
 
     async def run_loop(self, session: Session, notify) -> None:
