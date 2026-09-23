@@ -123,16 +123,38 @@ class GameBot:
                     "Boolean(firebase && firebase.auth && firebase.auth().currentUser)",
                     timeout=ACTION_TIMEOUT_MS,
                 )
-
-                await session.page.goto(GAME_URL, wait_until="domcontentloaded", timeout=ACTION_TIMEOUT_MS)
+                # Follow the site’s own link; this gives Firebase persistence and the
+                # home-page auth guard the same navigation timing as a real player.
+                game_link = session.page.locator("a[href*='game.html']").first
+                if await game_link.count() == 0:
+                    raise RuntimeError("authenticated home page has no game link")
+                await game_link.click()
+                await session.page.wait_for_url("**/p2e/game.html**", timeout=ACTION_TIMEOUT_MS)
                 # UID is set by onAuthStateChanged before the asynchronous Firestore load.
                 await session.page.wait_for_function(
                     "Boolean(window.CURRENT_USER_UID)", timeout=max(ACTION_TIMEOUT_MS, 60000)
                 )
                 # GAME_CACHE can arrive after global_config and player data reads.
-                await session.page.wait_for_function(
-                    "Boolean(window.GAME_CACHE)", timeout=max(ACTION_TIMEOUT_MS, 60000)
-                )
+                try:
+                    await session.page.wait_for_function(
+                        "Boolean(window.GAME_CACHE)", timeout=max(ACTION_TIMEOUT_MS, 15000)
+                    )
+                except Exception as cache_exc:
+                    profile = await session.page.evaluate("""async () => {
+                      const uid = window.CURRENT_USER_UID;
+                      try {
+                        const snap = await db.collection('guests').doc(uid).get();
+                        return {exists: snap.exists, uid};
+                      } catch (e) {
+                        return {exists: null, uid, error: String(e).slice(0, 240)};
+                      }
+                    }""")
+                    if profile.get("exists") is False:
+                        raise RuntimeError(
+                            "Firebase login succeeded, but this account has no game player profile. "
+                            "Register the account through the reference site’s Registration form first."
+                        ) from cache_exc
+                    raise
             except Exception as exc:
                 detail = login_dialogs[-1] if login_dialogs else str(exc).splitlines()[0]
                 raise RuntimeError(
