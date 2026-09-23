@@ -103,14 +103,43 @@ class GameBot:
     async def login(self, chat_id: int, username: str, password: str) -> None:
         session = await self.open_session(chat_id)
         async with session.lock:
-            await session.page.goto(REFERENCE_URL, wait_until="domcontentloaded", timeout=ACTION_TIMEOUT_MS)
-            await session.page.locator("#show-login").click()
-            await session.page.locator("#login-username").fill(username)
-            await session.page.locator("#login-password").fill(password)
-            await session.page.locator("#login-form").locator("button[type=submit]").click()
-            await session.page.wait_for_timeout(1200)
-            await session.page.goto(GAME_URL, wait_until="domcontentloaded", timeout=ACTION_TIMEOUT_MS)
-            await session.page.wait_for_function("Boolean(window.CURRENT_USER_UID && window.GAME_CACHE)", timeout=ACTION_TIMEOUT_MS)
+            login_dialogs: list[str] = []
+
+            async def capture_dialog(dialog) -> None:
+                login_dialogs.append(dialog.message[:240])
+                await dialog.accept()
+
+            session.page.on("dialog", capture_dialog)
+            try:
+                await session.page.goto(REFERENCE_URL, wait_until="domcontentloaded", timeout=ACTION_TIMEOUT_MS)
+                await session.page.locator("#show-login").click()
+                await session.page.locator("#login-username").fill(username)
+                await session.page.locator("#login-password").fill(password)
+                await session.page.locator("#login-form").locator("button[type=submit]").click()
+
+                # The reference auth script redirects to p2e/home.html after Firebase sign-in.
+                await session.page.wait_for_url("**/p2e/home.html", timeout=ACTION_TIMEOUT_MS)
+                await session.page.wait_for_function(
+                    "Boolean(firebase && firebase.auth && firebase.auth().currentUser)",
+                    timeout=ACTION_TIMEOUT_MS,
+                )
+
+                await session.page.goto(GAME_URL, wait_until="domcontentloaded", timeout=ACTION_TIMEOUT_MS)
+                # UID is set by onAuthStateChanged before the asynchronous Firestore load.
+                await session.page.wait_for_function(
+                    "Boolean(window.CURRENT_USER_UID)", timeout=max(ACTION_TIMEOUT_MS, 60000)
+                )
+                # GAME_CACHE can arrive after global_config and player data reads.
+                await session.page.wait_for_function(
+                    "Boolean(window.GAME_CACHE)", timeout=max(ACTION_TIMEOUT_MS, 60000)
+                )
+            except Exception as exc:
+                detail = login_dialogs[-1] if login_dialogs else str(exc).splitlines()[0]
+                raise RuntimeError(
+                    f"login stage failed at {session.page.url}: {detail[:300]}"
+                ) from exc
+            finally:
+                session.page.remove_listener("dialog", capture_dialog)
 
     async def state(self, session: Session) -> dict[str, Any]:
         return await session.page.evaluate("""() => {
@@ -258,9 +287,12 @@ async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         await bot.login(update.effective_chat.id, username, password)
         await update.effective_chat.send_message("Logged in successfully. Credentials were not stored. Use /status or /run.")
-    except Exception:
+    except Exception as exc:
         log.exception("login failed")
-        await update.effective_chat.send_message("Login failed. Check the participant username/password and try again.")
+        detail = str(exc).replace("\n", " ")[:500]
+        await update.effective_chat.send_message(
+            f"Login failed: {detail}\nCheck the username/password and try again."
+        )
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
