@@ -51,7 +51,10 @@ class GameBot:
 
     async def start(self) -> None:
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=HEADLESS, executable_path=os.getenv("CHROMIUM_PATH", "/usr/bin/chromium"), args=["--no-sandbox"])
+        launch_options = {"headless": HEADLESS, "args": ["--no-sandbox"]}
+        if os.getenv("CHROMIUM_PATH"):
+            launch_options["executable_path"] = os.environ["CHROMIUM_PATH"]
+        self.browser = await self.playwright.chromium.launch(**launch_options)
         PROFILE_ROOT.mkdir(parents=True, exist_ok=True)
 
     async def stop(self) -> None:
@@ -73,11 +76,11 @@ class GameBot:
         if not self.playwright:
             raise RuntimeError("Browser is not started")
         # A persistent context preserves Firebase Auth's browser session without storing passwords.
+        context_options = {"headless": HEADLESS, "args": ["--no-sandbox"]}
+        if os.getenv("CHROMIUM_PATH"):
+            context_options["executable_path"] = os.environ["CHROMIUM_PATH"]
         context = await self.playwright.chromium.launch_persistent_context(
-            str(self.profile_dir(chat_id)),
-            headless=HEADLESS,
-            executable_path=os.getenv("CHROMIUM_PATH", "/usr/bin/chromium"),
-            args=["--no-sandbox"],
+            str(self.profile_dir(chat_id)), **context_options
         )
         page = await context.new_page()
         session = Session(chat_id=chat_id, context=context, page=page)

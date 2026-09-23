@@ -16,10 +16,14 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
+      - name: Install Playwright Chromium
+        run: playwright install --with-deps chromium
       - name: Compile Python sources
-        run: python -m py_compile bot.py test_bot.py smoke_test.py
+        run: python -m py_compile bot.py test_bot.py smoke_test.py test_browser_launch.py
       - name: Run unit tests
         run: python test_bot.py
+      - name: Launch Playwright bundled Chromium
+        run: python test_browser_launch.py
       - name: Validate Railway files
         run: test -s Dockerfile && test -s railway.toml && grep -q 'DOCKERFILE' railway.toml
       - name: Build Railway Docker image

@@ -14,7 +14,7 @@ export TELEGRAM_BOT_TOKEN='your-bot-token'
 python bot.py
 ```
 
-The system Chromium is used by default. Set `CHROMIUM_PATH` if a different executable is required. `HEADLESS=0` is useful for debugging. Profiles are kept under `./profiles`; use `/logout` to close the session, and delete the profile directory manually if a participant asks for a full local-session reset.
+Playwright uses its bundled Chromium by default, which is the correct setup for Railway. Set `CHROMIUM_PATH` only when running locally with a separately installed browser. `HEADLESS=0` is useful for debugging. Profiles are kept under `./profiles`; use `/logout` to close the session, and delete the profile directory manually if a participant asks for a full local-session reset.
 
 ## Railway variables
 
