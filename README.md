@@ -16,6 +16,22 @@ python bot.py
 
 The system Chromium is used by default. Set `CHROMIUM_PATH` if a different executable is required. `HEADLESS=0` is useful for debugging. Profiles are kept under `./profiles`; use `/logout` to close the session, and delete the profile directory manually if a participant asks for a full local-session reset.
 
+## Railway variables
+
+Set these variables in the Railway service. `TELEGRAM_BOT_TOKEN` is the only required secret. Participants authenticate through the private Telegram `/login` command, so participant passwords do not belong in Railway variables.
+
+| Variable | Required | Value |
+| --- | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | Yes | Token from BotFather. |
+| `REFERENCE_URL` | No | Defaults to `https://p2efiktivgame.web.app`. |
+| `HEADLESS` | No | Keep `1` on Railway. |
+| `POLL_SECONDS` | No | Gameplay loop interval; default `8`. |
+| `REPORT_INTERVAL_SECONDS` | No | Telegram progress-report interval; default `60`. |
+| `ACTION_TIMEOUT_MS` | No | Browser action timeout; default `20000`. |
+| `PROFILE_ROOT` | No | Defaults to `./profiles`; Railway storage is ephemeral unless a volume is attached. |
+
+While `/run` is active, the bot sends a Telegram report at the configured interval containing XP, level, energy, food, resources, active quest, completed quests, and optimizer state. `/status` returns the same information immediately.
+
 ## Commands
 
 | Command | Purpose |

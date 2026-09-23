@@ -18,6 +18,17 @@ class BotTests(unittest.TestCase):
     def test_error_status(self):
         self.assertEqual(format_status({'error': 'boom'}, True), 'Optimizer error: boom')
 
+    def test_progress_fields_are_reported(self):
+        text = format_status({
+            'xp': 99, 'level': 2, 'energy': 8, 'maxEnergy': 100, 'food': 3,
+            'wood': 10, 'coal': 11, 'stone': 12, 'sand': 13, 'glass': 14,
+            'plank': 15, 'earth': 16, 'currentQuestId': 'q4_sand',
+            'completedQuests': 3,
+        }, True)
+        self.assertIn('Energy: 8/100', text)
+        self.assertIn('Sand 13', text)
+        self.assertIn('Quest: q4_sand', text)
+
 
 if __name__ == '__main__':
     unittest.main()

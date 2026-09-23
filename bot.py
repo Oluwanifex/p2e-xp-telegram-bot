@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ PROFILE_ROOT = Path(os.getenv("PROFILE_ROOT", "./profiles"))
 HEADLESS = os.getenv("HEADLESS", "1") != "0"
 POLL_SECONDS = float(os.getenv("POLL_SECONDS", "8"))
 ACTION_TIMEOUT_MS = int(os.getenv("ACTION_TIMEOUT_MS", "20000"))
+REPORT_INTERVAL_SECONDS = float(os.getenv("REPORT_INTERVAL_SECONDS", "60"))
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("p2e-xp-bot")
@@ -38,6 +40,7 @@ class Session:
     running: bool = False
     task: asyncio.Task | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    last_report_at: float = 0.0
 
 
 class GameBot:
@@ -210,13 +213,21 @@ class GameBot:
             try:
                 async with session.lock:
                     st = await self.optimize_once(session)
-                await notify(st)
+                now = time.monotonic()
+                should_report = (
+                    session.last_report_at == 0.0
+                    or now - session.last_report_at >= REPORT_INTERVAL_SECONDS
+                    or "error" in st
+                )
+                if should_report:
+                    session.last_report_at = now
+                await notify(st, should_report, session.running)
                 await asyncio.sleep(POLL_SECONDS)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 log.exception("optimizer iteration failed")
-                await notify({"error": str(exc)})
+                await notify({"error": str(exc)}, True, session.running)
                 await asyncio.sleep(max(POLL_SECONDS, 10))
 
 
@@ -287,15 +298,16 @@ async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Optimizer is already running.")
         return
     session.running = True
-    session.task = asyncio.create_task(bot.run_loop(session, lambda st: periodic_update(update, st)))
+    session.last_report_at = 0.0
+    session.task = asyncio.create_task(bot.run_loop(session, lambda st, report, running: periodic_update(update, st, report, running)))
     await update.message.reply_text("Optimizer started. Use /status for current XP or /stop to pause.")
 
 
-async def periodic_update(update: Update, state: dict[str, Any]) -> None:
-    # Avoid Telegram spam; the bot reports only errors here. /status gives live values.
-    if "error" in state:
+async def periodic_update(update: Update, state: dict[str, Any], report: bool, running: bool) -> None:
+    # Report at a bounded interval to avoid Telegram spam; /status remains on-demand.
+    if report or "error" in state:
         try:
-            await update.effective_chat.send_message(format_status(state, True))
+            await update.effective_chat.send_message(format_status(state, running))
         except Exception:
             pass
 
