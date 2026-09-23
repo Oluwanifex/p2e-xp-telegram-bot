@@ -22,3 +22,5 @@ jobs:
         run: python test_bot.py
       - name: Validate Railway files
         run: test -s Dockerfile && test -s railway.toml && grep -q 'DOCKERFILE' railway.toml
+      - name: Build Railway Docker image
+        run: docker build --tag p2e-xp-telegram-bot:ci .
